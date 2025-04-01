@@ -1,11 +1,11 @@
 package com.ecommerce.springboot.service;
 
+import com.ecommerce.springboot.exceptions.APIException;
+import com.ecommerce.springboot.exceptions.ResourceNotFoundException;
 import com.ecommerce.springboot.model.Category;
 import com.ecommerce.springboot.repositories.CategoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,18 +16,26 @@ public class CategoryServiceImpl implements CategoryService{
     private CategoryRepository categoryRepository;
     @Override
     public List<Category> getAllCategories() {
-        return categoryRepository.findAll();
+        List<Category> categories = categoryRepository.findAll();
+        if (categories.isEmpty()) {
+            throw new APIException("No category created yet");
+        }
+        return categories;
     }
 
     @Override
     public void createCategory(Category category) {
+        Category savedCategory = categoryRepository.findByCategoryName(category.getCategoryName());
+        if (savedCategory != null) {
+            throw new APIException("Category with name " + category.getCategoryName() + " already exists");
+        }
         categoryRepository.save(category);
     }
 
     @Override
     public String deleteCategory(Long categoryId) {
         Category category = categoryRepository.findById(categoryId)
-                .orElseThrow((() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found")));
+                .orElseThrow((() -> new ResourceNotFoundException("Category", "categoryId", categoryId)));
         categoryRepository.delete(category);
         return "Category with categoryId: " + categoryId + " successfully deleted";
     }
@@ -36,7 +44,7 @@ public class CategoryServiceImpl implements CategoryService{
     public Category updateCategory(Category category, Long categoryId) {
         Optional<Category> savedCategoryOptional= categoryRepository.findById(categoryId); //instead of findAll, we can use findById
         Category savedCategory = savedCategoryOptional
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Resource not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Category", "categoryId", categoryId));
         category.setCategoryId(categoryId);
         savedCategory = categoryRepository.save(category);
         return savedCategory;
