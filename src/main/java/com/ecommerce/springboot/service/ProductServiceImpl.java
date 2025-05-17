@@ -18,6 +18,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -41,6 +42,9 @@ public class ProductServiceImpl implements ProductService{
     private FileService fileService;
     @Value("${project.image}") // get the value from application.properties
     private String path;
+    @Value("${image.base.url}")
+    private String imageBaseUrl;
+
     @Override
     public ProductDTO addProduct(Long categoryId, ProductDTO productDTO) {
         Category category = categoryRepository.findById(categoryId)
@@ -55,7 +59,7 @@ public class ProductServiceImpl implements ProductService{
         }
         if (productNotPresent) {
             Product product = modelMapper.map(productDTO, Product.class);
-            product.setImage("default.png");
+            product.setImage("default.jpg");
             product.setCategory(category);
             double specialPrice = product.getPrice() - (product.getDiscount() * 0.01) * product.getPrice();
             product.setSpecialPrice(specialPrice);
@@ -67,15 +71,28 @@ public class ProductServiceImpl implements ProductService{
     }
 
     @Override
-    public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder) {
+    public ProductResponse getAllProducts(Integer pageNumber, Integer pageSize, String sortBy, String sortOrder, String keyword, String category) {
         Sort sortByAndOrder = sortOrder.equalsIgnoreCase("ascending")
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Product> pageProducts = productRepository.findAll(pageDetails);
+        Specification<Product> spec = Specification.where(null); // creating instance of spec
+        if (keyword != null && !keyword.isEmpty()) {
+            spec = spec.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get("productName")), "%" + keyword.toLowerCase() + "%"));
+        }
+        if (category != null && !category.isEmpty()) {
+            spec = spec.and((root, query, criteriaBuilder) ->
+                    criteriaBuilder.like(criteriaBuilder.lower(root.get("category").get("categoryName")), "%" + category.toLowerCase() + "%"));
+        }
+        Page<Product> pageProducts = productRepository.findAll(spec, pageDetails);
         List<Product> products = pageProducts.getContent(); // list of products from the database
         List<ProductDTO> productDTOS = products.stream()// use modelMapper to convert every object into DTO then convert to list
-                .map(product -> modelMapper.map(product, ProductDTO.class))
+                .map(product -> {
+                    ProductDTO productDto = modelMapper.map(product, ProductDTO.class);
+                    productDto.setImage(constructImageUrl(product.getImage()));
+                    return productDto;
+                })
                 .toList();
         ProductResponse productResponse = new ProductResponse();
         productResponse.setContent(productDTOS);
@@ -85,6 +102,10 @@ public class ProductServiceImpl implements ProductService{
         productResponse.setTotalPages(pageProducts.getTotalPages());
         productResponse.setLastPage(pageProducts.isLast());
         return productResponse;
+    }
+
+    private String constructImageUrl(String imageName) {
+        return imageBaseUrl.endsWith("/") ? imageBaseUrl + imageName : imageBaseUrl + "/" + imageName;
     }
 
     @Override
